@@ -1,0 +1,74 @@
+"""Example test queries for evaluation."""
+
+[
+  {
+    "id": 1,
+    "query": "What is the definition of reinforcement learning?",
+    "type": "factual",
+    "expected_modality": ["text"],
+    "difficulty": "easy"
+  },
+  {
+    "id": 2,
+    "query": "Show me the neural network architecture diagram",
+    "type": "visual",
+    "expected_modality": ["visual", "slides"],
+    "difficulty": "medium"
+  },
+  {
+    "id": 3,
+    "query": "What did the professor explain after showing the reward function graph?",
+    "type": "temporal_cross_modal",
+    "expected_modality": ["text", "visual"],
+    "difficulty": "hard"
+  },
+  {
+    "id": 4,
+    "query": "Explain the Q-learning update equation",
+    "type": "factual",
+    "expected_modality": ["text", "slides"],
+    "difficulty": "medium"
+  },
+  {
+    "id": 5,
+    "query": "What concepts were covered before Monte Carlo Tree Search?",
+    "type": "temporal",
+    "expected_modality": ["text"],
+    "difficulty": "medium"
+  },
+  {
+    "id": 6,
+    "query": "Describe the flowchart shown in lecture 3",
+    "type": "visual_analysis",
+    "expected_modality": ["visual", "slides"],
+    "difficulty": "hard"
+  },
+  {
+    "id": 7,
+    "query": "What is the UCB1 formula?",
+    "type": "factual",
+    "expected_modality": ["text", "slides"],
+    "difficulty": "easy"
+  },
+  {
+    "id": 8,
+    "query": "Compare the policy gradient explanation in lecture 4 vs lecture 6",
+    "type": "multi_lecture",
+    "expected_modality": ["text"],
+    "difficulty": "hard"
+  },
+  {
+    "id": 9,
+    "query": "Show me code examples of epsilon-greedy exploration",
+    "type": "code",
+    "expected_modality": ["slides"],
+    "difficulty": "medium"
+  },
+  {
+    "id": 10,
+    "query": "What is the difference between on-policy and off-policy learning?",
+    "type": "conceptual",
+    "expected_modality": ["text"],
+    "difficulty": "medium"
+  }
+]

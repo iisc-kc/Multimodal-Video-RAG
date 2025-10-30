@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: qdrant_vectordb
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - ./data/qdrant_storage:/qdrant/storage
+    environment:
+      - QDRANT_HOST=0.0.0.0
+    restart: unless-stopped
+    networks:
+      - rag_network
+
+  # Optional: Run Ollama in Docker (alternative to local install)
+  # ollama:
+  #   image: ollama/ollama:latest
+  #   container_name: ollama_llm
+  #   ports:
+  #     - "11434:11434"
+  #   volumes:
+  #     - ./data/ollama:/root/.ollama
+  #   environment:
+  #     - OLLAMA_HOST=0.0.0.0
+  #   restart: unless-stopped
+  #   networks:
+  #     - rag_network
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             count: 1
+  #             capabilities: [gpu]
+
+networks:
+  rag_network:
+    driver: bridge

@@ -1,0 +1,68 @@
+# Core Framework
+langchain==0.3.1
+langgraph==0.2.28
+langchain-community==0.3.0
+
+# Vector Database
+qdrant-client==1.11.3
+
+# Video/Audio Processing
+opencv-python==4.10.0.84
+moviepy==1.0.3
+ffmpeg-python==0.2.0
+
+# Audio Transcription
+openai-whisper==20231117
+faster-whisper==1.0.3  # Faster inference
+
+# Vision Models
+transformers==4.45.2
+torch==2.4.1
+torchvision==0.19.1
+pillow==10.4.0
+clip-by-openai==1.0  # pip install git+https://github.com/openai/CLIP.git
+
+# Text Embeddings
+sentence-transformers==3.1.1
+
+# OCR
+easyocr==1.7.1
+paddleocr==2.8.1
+pytesseract==0.3.13
+
+# LLM Inference
+ollama==0.3.3
+
+# Utilities
+python-dotenv==1.0.1
+pydantic==2.9.2
+pydantic-settings==2.5.2
+numpy==1.26.4
+pandas==2.2.3
+tqdm==4.66.5
+loguru==0.7.2
+
+# Web UI (Optional)
+gradio==4.44.0
+streamlit==1.39.0
+
+# Testing & Evaluation
+pytest==8.3.3
+pytest-asyncio==0.24.0
+
+# Data Processing
+scikit-learn==1.5.2
+networkx==3.3  # For knowledge graph
+
+# Image Processing
+imageio==2.35.1
+scikit-image==0.24.0
+
+# Async
+aiohttp==3.10.8
+asyncio==3.4.3
+
+# Development
+black==24.10.0
+flake8==7.1.1
+isort==5.13.2
