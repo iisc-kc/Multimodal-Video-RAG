@@ -27,9 +27,24 @@ class TextEmbedder:
     def _load_model(self):
         """Load sentence transformer model."""
         log.info(f"Loading text embedding model: {self.model_name}")
-        
-        self.model = SentenceTransformer(self.model_name, device=self.device)
-        
+
+        try:
+            # Some community models require executing remote config/code from the repo.
+            # Tell HuggingFace transformers to allow that by setting trust_remote_code=True.
+            # SentenceTransformer forwards kwargs to the underlying transformers loader.
+            self.model = SentenceTransformer(
+                self.model_name, device=self.device, trust_remote_code=True
+            )
+        except Exception as exc:
+            log.error(
+                "Failed to load text embedding model '%s'. If this is a community model, "
+                "ensure you trust the repository and set `trust_remote_code=True`. "
+                "Original error: %s",
+                self.model_name,
+                exc,
+            )
+            raise
+
         log.info(f"Text embedding model loaded, dimension: {self.embedding_dim}")
     
     def embed_text(self, text: str) -> np.ndarray:

@@ -51,8 +51,12 @@ def interactive_mode(agent: MultimodalRAGAgent):
             
             # Process query
             print("\n⏳ Processing...")
+            print("  • Analyzing query...")
             
             result = agent.query(query, verbose=verbose)
+            
+            print("  • Retrieval complete")
+            print("  • Synthesizing answer...")
             
             # Display results
             print("\n" + "="*80)

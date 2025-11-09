@@ -17,11 +17,12 @@ from src.utils.logger import log
 from src.utils.config import settings
 
 
-def build_index(processed_dir: Path):
+def build_index(processed_dir: Path, recreate: bool = False):
     """Build vector index from processed lecture data.
     
     Args:
         processed_dir: Directory containing processed lecture data
+        recreate: If True, delete existing collections and rebuild from scratch
     """
     log.info(f"Building index from {processed_dir}")
     
@@ -30,10 +31,11 @@ def build_index(processed_dir: Path):
     text_embedder = TextEmbedder()
     clip_embedder = CLIPEmbedder()
     
-    # Create collections
+    # Create collections (incremental mode by default - set recreate=True to rebuild from scratch)
     vector_store.create_collections(
         text_dim=text_embedder.embedding_dim,
-        visual_dim=clip_embedder.embedding_dim
+        visual_dim=clip_embedder.embedding_dim,
+        recreate=recreate
     )
     
     # Get all lecture directories
@@ -129,9 +131,14 @@ def index_text_chunks(
         )
         documents.append(doc)
     
-    # Generate embeddings
+    # Generate embeddings using embed_document for consistency with query embedding
+    # This ensures nomic models use "search_document:" prefix matching "search_query:" at query time
     texts = [doc.content for doc in documents]
-    embeddings = text_embedder.embed_texts_batch(texts, show_progress=False)
+    embeddings = []
+    for text in texts:
+        emb = text_embedder.embed_document(text)
+        embeddings.append(emb)
+    embeddings = np.array(embeddings)
     
     # Add to vector store
     vector_store.add_text_documents(documents, embeddings)
@@ -225,9 +232,13 @@ def index_slides(
     if not documents:
         return
     
-    # Generate embeddings
+    # Generate embeddings - use embed_document for consistency
     visual_embeddings = clip_embedder.embed_images_batch(slide_paths, batch_size=16)
-    text_embeddings = text_embedder.embed_texts_batch(ocr_texts, show_progress=False)
+    text_embeddings = []
+    for text in ocr_texts:
+        emb = text_embedder.embed_document(text)
+        text_embeddings.append(emb)
+    text_embeddings = np.array(text_embeddings)
     
     # Add to vector store
     vector_store.add_slide_documents(documents, visual_embeddings, text_embeddings)
@@ -244,6 +255,11 @@ def main():
         default="./data/processed",
         help="Directory containing processed lecture data"
     )
+    parser.add_argument(
+        "--recreate",
+        action="store_true",
+        help="Recreate collections from scratch (deletes existing data)"
+    )
     
     args = parser.parse_args()
     
@@ -254,7 +270,13 @@ def main():
         log.info("Run preprocess_videos.py first to process videos")
         return
     
-    build_index(processed_dir)
+    # Update recreate flag based on CLI argument
+    if args.recreate:
+        log.warning("--recreate flag set: Will delete existing collections and rebuild from scratch")
+        import time
+        time.sleep(2)  # Give user time to cancel
+    
+    build_index(processed_dir, recreate=args.recreate)
     
     log.info("\n✓ Index building complete!")
     log.info("You can now query the system using app/cli.py")

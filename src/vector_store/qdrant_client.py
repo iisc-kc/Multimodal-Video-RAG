@@ -3,6 +3,7 @@
 from typing import List, Dict, Optional, Any
 from pathlib import Path
 import uuid
+import time
 
 from qdrant_client import QdrantClient
 from qdrant_client.models import (
@@ -33,7 +34,8 @@ class MultimodalVectorStore:
         self.client = QdrantClient(
             host=settings.qdrant_host,
             port=settings.qdrant_port,
-            api_key=settings.qdrant_api_key
+            api_key=settings.qdrant_api_key,
+            timeout=300  # 5 minutes timeout for large batch operations
         )
         
         log.info(f"Connected to Qdrant at {settings.qdrant_host}:{settings.qdrant_port}")
@@ -41,44 +43,69 @@ class MultimodalVectorStore:
     def create_collections(
         self,
         text_dim: int = 768,
-        visual_dim: int = 512
+        visual_dim: int = 512,
+        recreate: bool = False
     ):
         """Create collections for different modalities.
         
         Args:
             text_dim: Text embedding dimension
             visual_dim: Visual embedding dimension
+            recreate: If True, delete existing collections and recreate. If False, skip if exists.
         """
-        log.info("Creating Qdrant collections")
+        log.info(f"{'Recreating' if recreate else 'Creating'} Qdrant collections")
         
-        # Text collection
-        self.client.recreate_collection(
-            collection_name=self.TEXT_COLLECTION,
-            vectors_config=VectorParams(
-                size=text_dim,
-                distance=Distance.COSINE
-            )
-        )
+        try:
+            # Text collection
+            if recreate or not self.client.collection_exists(self.TEXT_COLLECTION):
+                if recreate:
+                    self.client.delete_collection(self.TEXT_COLLECTION)
+                self.client.create_collection(
+                    collection_name=self.TEXT_COLLECTION,
+                    vectors_config=VectorParams(
+                        size=text_dim,
+                        distance=Distance.COSINE
+                    )
+                )
+                log.info(f"Created {self.TEXT_COLLECTION} collection")
+            else:
+                log.info(f"{self.TEXT_COLLECTION} collection already exists, skipping")
+            
+            # Visual collection (frames)
+            if recreate or not self.client.collection_exists(self.VISUAL_COLLECTION):
+                if recreate:
+                    self.client.delete_collection(self.VISUAL_COLLECTION)
+                self.client.create_collection(
+                    collection_name=self.VISUAL_COLLECTION,
+                    vectors_config=VectorParams(
+                        size=visual_dim,
+                        distance=Distance.COSINE
+                    )
+                )
+                log.info(f"Created {self.VISUAL_COLLECTION} collection")
+            else:
+                log.info(f"{self.VISUAL_COLLECTION} collection already exists, skipping")
+            
+            # Slide collection (multimodal: visual + text)
+            if recreate or not self.client.collection_exists(self.SLIDE_COLLECTION):
+                if recreate:
+                    self.client.delete_collection(self.SLIDE_COLLECTION)
+                self.client.create_collection(
+                    collection_name=self.SLIDE_COLLECTION,
+                    vectors_config={
+                        "visual": VectorParams(size=visual_dim, distance=Distance.COSINE),
+                        "text": VectorParams(size=text_dim, distance=Distance.COSINE)
+                    }
+                )
+                log.info(f"Created {self.SLIDE_COLLECTION} collection")
+            else:
+                log.info(f"{self.SLIDE_COLLECTION} collection already exists, skipping")
+            
+            log.info("Collections setup complete")
         
-        # Visual collection (frames)
-        self.client.recreate_collection(
-            collection_name=self.VISUAL_COLLECTION,
-            vectors_config=VectorParams(
-                size=visual_dim,
-                distance=Distance.COSINE
-            )
-        )
-        
-        # Slide collection (multimodal: visual + text)
-        self.client.recreate_collection(
-            collection_name=self.SLIDE_COLLECTION,
-            vectors_config={
-                "visual": VectorParams(size=visual_dim, distance=Distance.COSINE),
-                "text": VectorParams(size=text_dim, distance=Distance.COSINE)
-            }
-        )
-        
-        log.info("Collections created successfully")
+        except Exception as e:
+            log.error(f"Error creating collections: {e}")
+            raise
     
     def add_text_documents(
         self,
@@ -146,10 +173,33 @@ class MultimodalVectorStore:
             )
             points.append(point)
         
-        self.client.upsert(
-            collection_name=self.VISUAL_COLLECTION,
-            points=points
-        )
+        # Batch upsert for large collections (split into smaller chunks for stability)
+        batch_size = 50  # Reduced from 100 for better reliability
+        max_retries = 3
+        total_batches = (len(points) + batch_size - 1) // batch_size
+        
+        for batch_idx in range(0, len(points), batch_size):
+            batch = points[batch_idx:batch_idx + batch_size]
+            batch_num = (batch_idx // batch_size) + 1
+            
+            # Retry logic for timeout issues
+            for attempt in range(max_retries):
+                try:
+                    self.client.upsert(
+                        collection_name=self.VISUAL_COLLECTION,
+                        points=batch,
+                        wait=False  # Don't wait for indexing - async mode for speed
+                    )
+                    if batch_num % 10 == 0 or batch_num == total_batches:
+                        log.debug(f"Progress: {batch_num}/{total_batches} batches uploaded")
+                    break  # Success, exit retry loop
+                except Exception as e:
+                    if attempt < max_retries - 1:
+                        log.warning(f"Batch {batch_num} attempt {attempt + 1} failed, retrying... ({e})")
+                        time.sleep(2 ** attempt)  # Exponential backoff
+                    else:
+                        log.error(f"Failed to upsert batch {batch_num} after {max_retries} attempts: {e}")
+                        raise
         
         log.info(f"Added {len(points)} visual documents")
     
@@ -191,10 +241,33 @@ class MultimodalVectorStore:
             )
             points.append(point)
         
-        self.client.upsert(
-            collection_name=self.SLIDE_COLLECTION,
-            points=points
-        )
+        # Batch upsert for large collections (split into smaller chunks for stability)
+        batch_size = 50  # Reduced from 100 for better reliability
+        max_retries = 3
+        total_batches = (len(points) + batch_size - 1) // batch_size
+        
+        for batch_idx in range(0, len(points), batch_size):
+            batch = points[batch_idx:batch_idx + batch_size]
+            batch_num = (batch_idx // batch_size) + 1
+            
+            # Retry logic for timeout issues
+            for attempt in range(max_retries):
+                try:
+                    self.client.upsert(
+                        collection_name=self.SLIDE_COLLECTION,
+                        points=batch,
+                        wait=False  # Don't wait for indexing - async mode for speed
+                    )
+                    if batch_num % 10 == 0 or batch_num == total_batches:
+                        log.debug(f"Progress: {batch_num}/{total_batches} batches uploaded")
+                    break  # Success, exit retry loop
+                except Exception as e:
+                    if attempt < max_retries - 1:
+                        log.warning(f"Batch {batch_num} attempt {attempt + 1} failed, retrying... ({e})")
+                        time.sleep(2 ** attempt)  # Exponential backoff
+                    else:
+                        log.error(f"Failed to upsert batch {batch_num} after {max_retries} attempts: {e}")
+                        raise
         
         log.info(f"Added {len(points)} slide documents")
     
@@ -218,32 +291,37 @@ class MultimodalVectorStore:
         Returns:
             List of search results
         """
-        # Build filter
-        filter_conditions = []
-        
-        if lecture_id:
-            filter_conditions.append(
-                FieldCondition(key="lecture_id", match=MatchValue(value=lecture_id))
+        try:
+            # Build filter
+            filter_conditions = []
+            
+            if lecture_id:
+                filter_conditions.append(
+                    FieldCondition(key="lecture_id", match=MatchValue(value=lecture_id))
+                )
+            
+            if time_range:
+                start, end = time_range
+                filter_conditions.append(
+                    FieldCondition(key="timestamp", range=Range(gte=start, lte=end))
+                )
+            
+            query_filter = Filter(must=filter_conditions) if filter_conditions else None
+            
+            # Search
+            results = self.client.search(
+                collection_name=self.TEXT_COLLECTION,
+                query_vector=query_embedding.tolist(),
+                limit=limit,
+                query_filter=query_filter,
+                score_threshold=min_score
             )
+            
+            return [self._format_result(r) for r in results]
         
-        if time_range:
-            start, end = time_range
-            filter_conditions.append(
-                FieldCondition(key="timestamp", range=Range(gte=start, lte=end))
-            )
-        
-        query_filter = Filter(must=filter_conditions) if filter_conditions else None
-        
-        # Search
-        results = self.client.search(
-            collection_name=self.TEXT_COLLECTION,
-            query_vector=query_embedding.tolist(),
-            limit=limit,
-            query_filter=query_filter,
-            score_threshold=min_score
-        )
-        
-        return [self._format_result(r) for r in results]
+        except Exception as e:
+            log.error(f"Error searching text collection: {e}")
+            return []
     
     def search_visual(
         self,
@@ -265,34 +343,39 @@ class MultimodalVectorStore:
         Returns:
             List of search results
         """
-        filter_conditions = []
-        
-        if lecture_id:
-            filter_conditions.append(
-                FieldCondition(key="lecture_id", match=MatchValue(value=lecture_id))
+        try:
+            filter_conditions = []
+            
+            if lecture_id:
+                filter_conditions.append(
+                    FieldCondition(key="lecture_id", match=MatchValue(value=lecture_id))
+                )
+            
+            if slides_only:
+                filter_conditions.append(
+                    FieldCondition(key="is_slide", match=MatchValue(value=True))
+                )
+            
+            if time_range:
+                start, end = time_range
+                filter_conditions.append(
+                    FieldCondition(key="timestamp", range=Range(gte=start, lte=end))
+                )
+            
+            query_filter = Filter(must=filter_conditions) if filter_conditions else None
+            
+            results = self.client.search(
+                collection_name=self.VISUAL_COLLECTION,
+                query_vector=query_embedding.tolist(),
+                limit=limit,
+                query_filter=query_filter
             )
+            
+            return [self._format_result(r) for r in results]
         
-        if slides_only:
-            filter_conditions.append(
-                FieldCondition(key="is_slide", match=MatchValue(value=True))
-            )
-        
-        if time_range:
-            start, end = time_range
-            filter_conditions.append(
-                FieldCondition(key="timestamp", range=Range(gte=start, lte=end))
-            )
-        
-        query_filter = Filter(must=filter_conditions) if filter_conditions else None
-        
-        results = self.client.search(
-            collection_name=self.VISUAL_COLLECTION,
-            query_vector=query_embedding.tolist(),
-            limit=limit,
-            query_filter=query_filter
-        )
-        
-        return [self._format_result(r) for r in results]
+        except Exception as e:
+            log.error(f"Error searching visual collection: {e}")
+            return []
     
     def search_slides(
         self,
@@ -312,33 +395,38 @@ class MultimodalVectorStore:
         Returns:
             List of search results
         """
-        filter_conditions = []
+        try:
+            filter_conditions = []
+            
+            if lecture_id:
+                filter_conditions.append(
+                    FieldCondition(key="lecture_id", match=MatchValue(value=lecture_id))
+                )
+            
+            query_filter = Filter(must=filter_conditions) if filter_conditions else None
+            
+            # Determine vector name
+            if search_mode in ["text", "visual"]:
+                results = self.client.search(
+                    collection_name=self.SLIDE_COLLECTION,
+                    query_vector=(search_mode, query_embedding.tolist()),
+                    limit=limit,
+                    query_filter=query_filter
+                )
+            else:
+                # Hybrid search (not directly supported, would need custom implementation)
+                results = self.client.search(
+                    collection_name=self.SLIDE_COLLECTION,
+                    query_vector=("text", query_embedding.tolist()),
+                    limit=limit,
+                    query_filter=query_filter
+                )
+            
+            return [self._format_result(r) for r in results]
         
-        if lecture_id:
-            filter_conditions.append(
-                FieldCondition(key="lecture_id", match=MatchValue(value=lecture_id))
-            )
-        
-        query_filter = Filter(must=filter_conditions) if filter_conditions else None
-        
-        # Determine vector name
-        if search_mode in ["text", "visual"]:
-            results = self.client.search(
-                collection_name=self.SLIDE_COLLECTION,
-                query_vector=(search_mode, query_embedding.tolist()),
-                limit=limit,
-                query_filter=query_filter
-            )
-        else:
-            # Hybrid search (not directly supported, would need custom implementation)
-            results = self.client.search(
-                collection_name=self.SLIDE_COLLECTION,
-                query_vector=("text", query_embedding.tolist()),
-                limit=limit,
-                query_filter=query_filter
-            )
-        
-        return [self._format_result(r) for r in results]
+        except Exception as e:
+            log.error(f"Error searching slides collection: {e}")
+            return []
     
     def get_temporal_context(
         self,

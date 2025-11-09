@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 from typing import List, Optional
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -84,6 +84,56 @@ class Settings(BaseSettings):
     # Web UI
     gradio_port: int = Field(default=7860, env="GRADIO_PORT")
     gradio_share: bool = Field(default=False, env="GRADIO_SHARE")
+
+    # Validators
+    @field_validator('top_k_retrieval')
+    @classmethod
+    def validate_top_k(cls, v):
+        if v <= 0:
+            raise ValueError('top_k_retrieval must be positive')
+        if v > 100:
+            raise ValueError('top_k_retrieval should not exceed 100 for performance')
+        return v
+    
+    @field_validator('similarity_threshold')
+    @classmethod
+    def validate_threshold(cls, v):
+        if not 0 <= v <= 1:
+            raise ValueError('similarity_threshold must be between 0 and 1')
+        return v
+    
+    @field_validator('frame_sampling_rate')
+    @classmethod
+    def validate_frame_rate(cls, v):
+        if v <= 0:
+            raise ValueError('frame_sampling_rate must be positive')
+        if v > 30:
+            raise ValueError('frame_sampling_rate > 30 fps may cause performance issues')
+        return v
+    
+    @field_validator('chunk_size', 'chunk_overlap')
+    @classmethod
+    def validate_chunk_params(cls, v, info):
+        if v <= 0:
+            raise ValueError('chunk_size and chunk_overlap must be positive')
+        # Check if chunk_size is too large (nomic-embed has 8192 token limit)
+        if info.field_name == 'chunk_size' and v > 2048:
+            import warnings
+            warnings.warn(
+                f'chunk_size={v} may exceed model token limits. '
+                'Recommended: <= 2048 for safety with nomic-embed-text',
+                UserWarning
+            )
+        return v
+    
+    @field_validator('temporal_window')
+    @classmethod
+    def validate_temporal_window(cls, v):
+        if v < 0:
+            raise ValueError('temporal_window cannot be negative')
+        if v > 300:
+            raise ValueError('temporal_window > 300 seconds may return too many results')
+        return v
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)

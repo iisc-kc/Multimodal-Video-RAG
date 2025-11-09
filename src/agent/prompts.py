@@ -11,12 +11,23 @@ Analyze this query and determine:
 4. Does this require visual analysis? (e.g., "show me", "diagram", "chart")
 5. Does this need cross-modal linking? (e.g., "what was said when showing...")
 
-Provide your analysis in this format:
-MODALITIES: [list of: text, visual, slides]
-TEMPORAL: yes/no
-VISUAL_ANALYSIS: yes/no
-CROSS_MODAL: yes/no
-REASONING: brief explanation of your analysis
+You must respond with valid JSON in this exact format:
+{{
+  "modalities": ["text", "visual", "slides"],
+  "temporal": false,
+  "visual_analysis": false,
+  "cross_modal": false,
+  "reasoning": "Brief explanation of your analysis"
+}}
+
+Rules:
+- modalities array must contain at least one of: "text", "visual", "slides"
+- IMPORTANT: For conceptual questions, ALWAYS include "slides" in modalities since lecture slides contain key diagrams, definitions, and visual explanations
+- temporal, visual_analysis, cross_modal must be boolean (true/false)
+- Set visual_analysis to true if the user wants to see diagrams/charts or asks about visual concepts
+- reasoning must be a single string explaining your choices
+
+Respond only with the JSON, no other text.
 """
 
 PLANNING_PROMPT = """You are a planning agent for a multimodal RAG system.
@@ -59,13 +70,19 @@ VISUAL ANALYSIS:
 {visual_analysis}
 
 Based on all the information above, provide a comprehensive answer to the user's query.
-Include:
-1. Direct answer to the question
-2. Relevant timestamps and source references
-3. Visual descriptions if applicable
-4. Additional context that might be helpful
 
-Format your response clearly with timestamps and source citations.
+IMPORTANT INSTRUCTIONS:
+1. **Use ALL available information** - if slides or visuals are provided above, MENTION them in your answer
+2. When slide results are available, note that "relevant slides were found" and reference their content
+3. When visual results are available, mention "visual frames from the lecture" support the answer
+4. Include relevant timestamps and source references from ALL modalities (text, visual, slides)
+5. Be specific about which modality provided which information
+6. Additional context that might be helpful
+
+Format your response clearly with timestamps and source citations like:
+- "According to the transcript at 12:30..." (for text)
+- "The slide at timestamp 15:45 shows..." (for slides)
+- "Visual frame at 8:20 displays..." (for visual frames)
 """
 
 TEMPORAL_REASONING_PROMPT = """Given these results ordered by timestamp, identify the progression of concepts:
